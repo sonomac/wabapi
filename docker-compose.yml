@@ -1,0 +1,73 @@
+#
+# Docker Compose for secure instantation of the WhatsApp Business API on Premise
+#
+# Specs:
+#   - hold all credentials in files only readable by docker group on the host
+#   - external volumes passed by variable when the image is run: root folder ${VARDIR}
+#     e.g. on Mac-P: VARDIR=/Users/mcanal/projects/data/whatsapp
+#   - only local network for the communication between db and wacore
+#   - expose waweb to external interface (eth0)
+#   - restart all services when docker is restarted
+#
+
+version: '3'
+
+services:
+  db:
+    image: mysql:5.7.22
+    restart: always
+    network_mode: bridge
+    environment:
+      #FIXME: put passwords to files using _FILE prefix
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql/credentials.root
+      MYSQL_USER: wauser
+      MYSQL_PASSWORD_FILE: /run/secrets/mysql/credentials.mysql
+    volumes:
+     - ${DATAROOT:-.}/secrets:/run/secrets/mysql
+     - ${DATAROOT:-.}/mysql:/var/lib/mysql
+    #NOTE: expose only required for local monitoring access (e.g. from other VM or cluster)
+    #OFF expose:
+    #OFF     - "33060"
+    ports:
+       - "127.0.0.1:33060:3306"
+  wacore:
+    image: docker.whatsapp.biz/coreapp:v2.19.4
+    restart: always
+    command: ["/opt/whatsapp/bin/wait_on_mysql.sh", "/opt/whatsapp/bin/launch_within_docker.sh"]
+    network_mode: bridge
+    volumes:
+     - ${DATAROOT:-.}/data:/usr/local/waent/data
+     - ${DATAROOT:-.}/media:/usr/local/wamedia
+    env_file:
+      - db.env
+    depends_on:
+      - "db"
+    links:
+      - "db:wadb.local"
+  waweb:
+    image: docker.whatsapp.biz/web:v2.19.4
+    restart: always
+    command: ["/opt/whatsapp/bin/wait_on_mysql.sh", "/opt/whatsapp/bin/launch_within_docker.sh"]
+    network_mode: bridge
+    # exposed port to the VM's local interface only: 127.0.0.1:9090
+    ports:
+     #NOTE: for testing only until the Apache HTTPD is inplace
+     - "9090:443"
+     #LOCAL - "127.0.0.1:9090:443"
+    volumes_from:
+     - wacore:rw
+    env_file:
+      - db.env
+    environment:
+      WACORE_HOSTNAME: wacore.local
+    #NOTE: only relevant for the images locally instantiated
+    depends_on:
+      - "db"
+      - "wacore"
+    links:
+      - "db:wadb.local"
+      - "wacore:wacore.local"
+    #NOTE: to be passed via run -
+    hostname: ${WAWEB_HOSTNAME:-waweb}
+    domainname: ${WAWEB_DOMAIN:?err}
+
