@@ -1,0 +1,32 @@
+version: '3'
+
+volumes:
+  whatsappData:
+    driver: local
+  whatsappMedia:
+    driver: local
+
+services:
+  master:
+    image: docker.whatsapp.biz/coreapp:v2.19.7
+    restart: unless-stopped
+    command: ["/opt/whatsapp/bin/wait_on_mysql.sh", "/opt/whatsapp/bin/launch_within_docker.sh"]
+    ports:
+      # coreapp may have occupied ports 6250-6253 on the same host
+      - "6254-6257:6250-6253"
+    volumes:
+     - whatsappData:/usr/local/waent/data
+     - whatsappMedia:/usr/local/wamedia
+    env_file:
+      - db.env
+    environment:
+      WA_APP_MULTICONNECT: 1
+      WA_MASTER_NODE: 1
+      # Represents external ports of this service (master)
+      # Naming is due to legacy reasons
+      COREAPP_EXTERNAL_PORTS: "6254,6255,6256,6257"
+      # Represents hostname of the current machine where this service (master) is hosted on
+      # Naming is due to legacy reasons
+      # $EXTERNAL_HOSTNAME should reflect the current machine's hostname
+      # accessible to other containers
+      COREAPP_HOSTNAME: "${EXTERNAL_HOSTNAME:?$EXTERNAL_HOSTNAME should reflect the current machine's hostname accessible to other containers}"
